@@ -13,6 +13,7 @@
 
 ### How to run the script
    * Update `./config/config.json` to match the name and version of the package to be checked e.g.  
+
     ```javascript
     "packages": [
       {        
@@ -22,8 +23,10 @@
         }
     ],
     ```
+
     * ensure the virtual environment is set `source ./.venv/bin/activate`
     * `python main.py --rootdir /path/to/data/folder`  rootdir defaults to $HOME/data/ig-tx-check
+    
     ```
         ig-tx-check % python main.py -h
         usage: main.py [-h] [-r ROOTDIR]
