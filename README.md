@@ -14,9 +14,9 @@
 ### How to run the script
    * Update `./config/config.json` to match the name and version of the package to be checked e.g.  
    ```       
-        "name" : "hl7.fhir.au.base",             // name of the package on simplifier
+        "name" : "hl7.fhir.au.base",             // name of the package on simplifier.net
         "version" : "4.2.2-preview",             // version of the package
-        "title" : "AU Base Implementation Guide" // human readable descriprion to aid debugging etc...            
+        "title" : "AU Base Implementation Guide" // human readable description to aid debugging etc...            
    ```
    * ensure the virtual environment is set `source ./.venv/bin/activate`
    * `python main.py --rootdir /path/to/data/folder`  rootdir defaults to $HOME/data/ig-tx-check
