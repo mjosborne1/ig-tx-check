@@ -13,7 +13,7 @@
 
 ### How to run the script
    * Update `./config/config.json` to match the name and version of the package to be checked e.g.  
-    ```
+    ```javascript
     "packages": [
       {        
         "name" : "hl7.fhir.au.base",             <---- name of the package on simplifier
