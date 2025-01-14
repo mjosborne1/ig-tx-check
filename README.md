@@ -16,9 +16,9 @@
     ```javascript
     "packages": [
       {        
-        "name" : "hl7.fhir.au.base",             <---- name of the package on simplifier
-        "version" : "4.2.2-preview",             <---- version of the package
-        "title" : "AU Base Implementation Guide" <---- human readable descriprion to aid debugging etc...       
+        "name" : "hl7.fhir.au.base",             // name of the package on simplifier
+        "version" : "4.2.2-preview",             // version of the package
+        "title" : "AU Base Implementation Guide" // human readable descriprion to aid debugging etc...       
         }
     ],
     ```
