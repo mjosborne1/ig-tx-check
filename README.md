@@ -18,7 +18,9 @@
         "version" : "4.2.2-preview",             // version of the package
         "title" : "AU Base Implementation Guide" // human readable description to aid debugging etc...            
    ```
-   * ensure the virtual environment is set `source ./.venv/bin/activate`
+   * ensure the virtual environment is set
+      * Mac/Linux/WSL: `source ./.venv/bin/activate`
+      * Windows CMD/Powershell: `.\.venv\Scripts\activate`
    * `python main.py --rootdir /path/to/data/folder`  rootdir defaults to $HOME/data/ig-tx-check
    ```
         ig-tx-check % python main.py -h
