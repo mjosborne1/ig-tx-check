@@ -27,7 +27,7 @@ class TestValueSetTester(unittest.TestCase):
            Test that the server is up and is a terminology server
         """
         status = run_capability_test(self.endpoint)
-        self.assertEqual(status,"200")
+        self.assertEqual(status,200)
 
     def test_check_coding(self):
         """
@@ -35,12 +35,12 @@ class TestValueSetTester(unittest.TestCase):
         """
         cs_excluded = get_config(self.test_config_default,'codesystem-excluded')  
         example_list = get_json_files(self.example_dir)
-        test_result_list = []
+        all_results = []
         for ex in example_list:
-            data = search_json_file(self.endpoint, cs_excluded, ex, test_result_list)
-        fdata = [item for sublist in data for item in sublist]
+            results = search_json_file(self.endpoint, cs_excluded, ex)
+            all_results.extend(results)
         header = ['file','code','system','result','reason']
-        df_results = pd.DataFrame(fdata,columns=header)
+        df_results = pd.DataFrame(all_results,columns=header)
         self.assertFalse((df_results['result']=='FAIL').any())
         
 

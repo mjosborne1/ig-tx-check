@@ -1,13 +1,22 @@
 import argparse
 import os
 import sys
-import getter
-import tester
+from  getter import get_npm_packages
+from tester import run_example_check, run_capability_test
 from utils import check_path, get_config
 import logging
 from datetime import datetime
 
 def main():
+    """
+    Check terminology using the $validate-code operation on a single fhir IG npm package
+    downloded by the getter function from simplifier.net ig registry
+    Keyword arguments:
+    rootdir -- Root data folder, where the report file goes
+    config.json tells the download which package to download from simplifier.net
+    and which errors/warnings can be safely ignored or checked manually.    
+    """
+    
     homedir=os.environ['HOME']
     parser = argparse.ArgumentParser()
     defaultpath=os.path.join(homedir,"data","ig-tx-check")
@@ -34,18 +43,18 @@ def main():
     mode = conf["mode"] or "clean"
     endpoint = conf["endpoint"] 
     # First check that the tx server instance is up 
-    http_stat = tester.run_capability_test(endpoint)
-    if http_stat != "200":
+    http_stat = run_capability_test(endpoint)
+    if http_stat != 200:
         logger.fatal(f'Capability test failed with status: {http_stat}')
         sys.exit(1)
     logger.info("Passed Capability test, continue on with other checks")
 
     # Get npm packages and serialise to local folder
-    npm_path_list = getter.get_npm_packages(mode, data_dir=args.rootdir, config_file=config_file)
+    npm_path_list = get_npm_packages(mode, data_dir=args.rootdir, config_file=config_file)
     print('...npm packages done')
 
     # Run Example checks
-    tester.run_example_check(endpoint, config_file, npm_path_list, outdir)
+    run_example_check(endpoint, config_file, npm_path_list, outdir)
     logger.info("Finished")
 
 if __name__ == '__main__':

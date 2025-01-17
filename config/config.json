@@ -4,11 +4,11 @@
     "endpoint": "https://tx.ontoserver.csiro.au/fhir"
     }],
     "packages": [
-      {        
-        "name" : "hl7.fhir.au.base",
-        "version" : "4.2.2-preview",
-        "title" : "AU Base Implementation Guide"        
-        }
+      {
+        "name" : "hl7.fhir.au.core",
+        "version" : "1.0.0-preview",
+        "title" : "AU Core Implementation Guide"        
+      }
     ],
     "codesystem-excluded": [
         { 
