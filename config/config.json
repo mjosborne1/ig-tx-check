@@ -3,12 +3,17 @@
     "mode": "dirty",
     "endpoint": "https://tx.ontoserver.csiro.au/fhir"
     }],
+    "fhir-package-cache": "/Users/osb074/.fhir/packages",
+    "valueset-binding-options": {
+        "require-must-support": true,
+        "minimum-binding-strength": ["required", "extensible", "preferred"]
+    },
     "packages": [
-      {
-        "name" : "hl7.fhir.au.core",
-        "version" : "1.0.0-preview",
-        "title" : "AU Core Implementation Guide"        
-      }
+        {
+        "name" : "hl7.fhir.au.ereq",
+        "version" : "dev",
+        "title" : "AU eRequesting Implementation Guide"        
+        }
     ],
     "codesystem-excluded": [
         { 

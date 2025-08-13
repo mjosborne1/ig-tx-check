@@ -2,7 +2,7 @@ import argparse
 import os
 import sys
 from  getter import get_npm_packages
-from tester import run_example_check, run_capability_test
+from tester import run_example_check, run_capability_test, run_valueset_binding_report
 from utils import check_path, get_config
 import logging
 from datetime import datetime
@@ -55,6 +55,12 @@ def main():
 
     # Run Example checks
     run_example_check(endpoint, config_file, npm_path_list, outdir)
+    logger.info("Example checks completed")
+    
+    # Run ValueSet binding report
+    run_valueset_binding_report(npm_path_list, outdir, config_file)
+    logger.info("ValueSet binding report completed")
+    
     logger.info("Finished")
 
 if __name__ == '__main__':
