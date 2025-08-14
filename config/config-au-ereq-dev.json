@@ -1,7 +1,7 @@
 {
     "init": [{
     "mode": "dirty",
-    "endpoint": "https://tx.dev.hl7.org.au/fhir"
+    "endpoint": "https://tx.ontoserver.csiro.au/fhir"
     }],
     "fhir-package-cache": "/Users/osb074/.fhir/packages",
     "valueset-binding-options": {
@@ -10,9 +10,9 @@
     },
     "packages": [
         {
-        "name" : "hl7.fhir.uv.ips",
-        "version" : "current",
-        "title" : "IPS Implementation Guide"        
+        "name" : "hl7.fhir.au.ereq",
+        "version" : "dev",
+        "title" : "AU eRequesting Implementation Guide"        
         }
     ],
     "codesystem-excluded": [

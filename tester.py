@@ -136,6 +136,75 @@ def clean_valueset_name(name):
         return name.split('|')[0]
     return name
 
+def get_valueset_expansion_count(vs_url, endpoint=None):
+    """
+    Get the expansion count for a ValueSet by calling the $expand operation
+    
+    Args:
+        vs_url: ValueSet URL
+        endpoint: FHIR terminology server endpoint
+        
+    Returns:
+        int: Number of concepts in the expansion, or None if expansion failed
+    """
+    if not endpoint:
+        return None
+        
+    def try_expand(url):
+        """Helper function to try expanding a single URL"""
+        try:
+            headers = {'Accept': 'application/fhir+json'}
+            expand_url = f"{endpoint}/ValueSet/$expand?url={quote(url)}&count=0"
+            response = requests.get(expand_url, headers=headers, timeout=30)
+            
+            if response.status_code == 200:
+                data = response.json()
+                
+                # Check if expansion was successful
+                if data.get("resourceType") == "ValueSet" and "expansion" in data:
+                    expansion = data["expansion"]
+                    
+                    # Get total count from expansion.total
+                    total = expansion.get("total")
+                    if total is not None:
+                        logger.debug(f"ValueSet {url} expansion count: {total}")
+                        return total
+                    
+                    # Fallback: count contains array if present
+                    contains = expansion.get("contains", [])
+                    if contains:
+                        count = len(contains)
+                        logger.debug(f"ValueSet {url} expansion count (from contains): {count}")
+                        return count
+                        
+                    # If neither total nor contains, might be empty set
+                    logger.debug(f"ValueSet {url} expansion appears empty")
+                    return 0
+                    
+            logger.debug(f"Failed to expand ValueSet {url}: HTTP {response.status_code}")
+            return None
+            
+        except Exception as e:
+            logger.debug(f"Error expanding ValueSet {url}: {e}")
+            return None
+    
+    # First try the original URL
+    result = try_expand(vs_url)
+    if result is not None:
+        return result
+    
+    # If failed and URL contains version (|), try without version
+    if '|' in vs_url:
+        unversioned_url = vs_url.split('|')[0]
+        logger.debug(f"Retrying expansion without version: {unversioned_url}")
+        result = try_expand(unversioned_url)
+        if result is not None:
+            return result
+    
+    # If all attempts failed, log warning and return None
+    logger.warning(f"Failed to expand ValueSet {vs_url} (tried versioned and unversioned)")
+    return None
+
 logger = logging.getLogger(__name__)
 SKIP_DIRS = ["assets", "temp", "templates"]
 EXTS = ["json"]
@@ -448,15 +517,19 @@ def validate_code_with_fhirpath(resource, fhirpath_expression, endpoint, cs_excl
         codes = [codes] if codes is not None else []
     for code_info in codes:
         if isinstance(code_info, dict):
+            # This is a Coding object with system and code
             system = code_info.get('system')
             code = code_info.get('code')
             if system and code and isinstance(system, str) and isinstance(code, str) and system.strip() and code.strip():
                 result = validate_example_code(endpoint, cs_excluded, file, system, code)
                 results.append(result)
             else:
-                logging.warning(f'Invalid system or code: system={system}, code={code}')
+                logging.debug(f'Invalid system or code in coding: system={system}, code={code}')
+        elif isinstance(code_info, str):
+            # Skip string values - these are usually status codes or other non-coded elements
+            logging.debug(f'Skipping string value from FHIRPath expression "{fhirpath_expression}": {code_info}')
         else:
-            logging.warning(f'Unexpected type for code_info: {type(code_info)}')
+            logging.debug(f'Unexpected type for code_info from expression "{fhirpath_expression}": {type(code_info)} - {code_info}')
     return results
 
 
@@ -512,7 +585,8 @@ def search_json_file(endpoint, cs_excluded, file):
     with open(file, 'r') as f:
         resource = json.load(f)
 
-    fhirpath_expressions = [
+    # Base FHIRPath expressions for individual resources
+    base_expressions = [
         "category.coding",
         "code.coding",
         "coding",
@@ -557,6 +631,57 @@ def search_json_file(endpoint, cs_excluded, file):
         "ingredient.quantity.numerator",
         "ingredient.quantity.denominator"
     ]
+    
+    # Check if this is a Bundle resource and add Bundle-specific expressions
+    fhirpath_expressions = base_expressions.copy()
+    if resource.get("resourceType") == "Bundle":
+        # Add Bundle-specific expressions that traverse into entries
+        bundle_expressions = [
+            "entry.resource.category.coding",
+            "entry.resource.code.coding", 
+            "entry.resource.coding",
+            "entry.resource.type.coding",
+            "entry.resource.status",
+            "entry.resource.priority.coding",
+            "entry.resource.severity.coding", 
+            "entry.resource.clinicalStatus.coding",
+            "entry.resource.verificationStatus.coding",
+            "entry.resource.intent.coding",
+            "entry.resource.use.coding",
+            "entry.resource.action.coding",
+            "entry.resource.outcome.coding",
+            "entry.resource.subType.coding",
+            "entry.resource.reasonCode.coding",
+            "entry.resource.route.coding",
+            "entry.resource.vaccineCode.coding",
+            "entry.resource.medicationCodeableConcept.coding",
+            "entry.resource.bodySite.coding",
+            "entry.resource.relationship.coding",
+            "entry.resource.sex.coding",
+            "entry.resource.morphology.coding",
+            "entry.resource.location.coding",
+            "entry.resource.format.coding",
+            "entry.resource.class.coding",
+            "entry.resource.modality.coding",
+            "entry.resource.jurisdiction.coding",
+            "entry.resource.topic.coding",
+            "entry.resource.contentType.coding",
+            "entry.resource.connectionType.coding",
+            "entry.resource.operationalStatus.coding",
+            "entry.resource.color.coding",
+            "entry.resource.measurementPeriod.coding",
+            "entry.resource.doseQuantity.coding",
+            "entry.resource.substanceCodeableConcept.coding",
+            "entry.resource.valueCodeableConcept.coding",
+            "entry.resource.valueCoding",
+            "entry.resource.valueQuantity.coding",
+            "entry.resource.ingredient.itemCodeableConcept.coding",
+            "entry.resource.dosageInstruction.route.coding",
+            "entry.resource.ingredient.quantity",
+            "entry.resource.ingredient.quantity.numerator",
+            "entry.resource.ingredient.quantity.denominator"
+        ]
+        fhirpath_expressions.extend(bundle_expressions)
 
     test_result_list = []
     for expression in fhirpath_expressions:
@@ -603,7 +728,7 @@ def run_example_check(endpoint, testconf, npm_path_list, outdir):
     all_results = []
 
     for ig_folder in npm_path_list:
-        example_dir = os.path.join(ig_folder, "example")
+        example_dir = os.path.join(ig_folder, "package", "example")
 
         for ex in get_json_files(example_dir):
             results = search_json_file(endpoint, cs_excluded, ex)
@@ -694,6 +819,13 @@ def run_valueset_binding_report(npm_path_list, outdir, config_file):
             # Get ValueSet title from local packages first, then external server
             vs_title = get_valueset_title(vs_url, endpoint, npm_path_list)
             
+            # Get ValueSet expansion count
+            expansion_count = get_valueset_expansion_count(vs_url, endpoint)
+            if expansion_count is not None:
+                expansion_display = str(expansion_count)
+            else:
+                expansion_display = "N/A"
+            
             # Create ValueSet link using title
             vs_link = f'<a href="{vs_url}" target="_blank">{vs_title}</a>'
             
@@ -717,6 +849,7 @@ def run_valueset_binding_report(npm_path_list, outdir, config_file):
             
             table_data.append({
                 'ValueSet': vs_link,
+                'Expansion Count': expansion_display,
                 'Profiles': profiles_combined,
                 'sort_title': vs_title.lower()  # Add sorting key
             })
@@ -743,6 +876,22 @@ def run_valueset_binding_report(npm_path_list, outdir, config_file):
         
         criteria_description = f"Includes ValueSets bound to {criteria_parts[0]} with {criteria_parts[1]} from the main IG package (both snapshot and differential views)."
         
+        # Prepare IG package information for display
+        try:
+            packages_config = get_config(config_file, 'packages')
+            if packages_config and len(packages_config) > 0:
+                ig_info_parts = []
+                for pkg in packages_config:
+                    name = pkg.get('name', 'unknown')
+                    version = pkg.get('version', 'unknown')
+                    title = pkg.get('title', name)
+                    ig_info_parts.append(f"{title} ({name}#{version})")
+                ig_info = ', '.join(ig_info_parts)
+            else:
+                ig_info = 'Not configured'
+        except:
+            ig_info = 'Not configured'
+        
         # Create a more readable HTML with custom styling
         html_content = f"""
         <!DOCTYPE html>
@@ -761,8 +910,9 @@ def run_valueset_binding_report(npm_path_list, outdir, config_file):
                 tr:hover {{ background-color: #f5f5f5; }}
                 a {{ color: #3498db; text-decoration: none; }}
                 a:hover {{ text-decoration: underline; color: #2980b9; }}
-                .valueset-col {{ width: 30%; }}
-                .profiles-col {{ width: 70%; }}
+                .valueset-col {{ width: 25%; }}
+                .expansion-col {{ width: 10%; text-align: center; }}
+                .profiles-col {{ width: 65%; }}
                 .info {{ background-color: #ecf0f1; padding: 15px; border-radius: 5px; margin: 15px 0; }}
             </style>
         </head>
@@ -770,7 +920,9 @@ def run_valueset_binding_report(npm_path_list, outdir, config_file):
             <h1>FHIR Profile ValueSet Bindings Report</h1>
             <div class="info">
                 <p><strong>Generated on:</strong> {pd.Timestamp.now().strftime('%Y-%m-%d %H:%M:%S')}</p>
+                <p><strong>Implementation Guide:</strong> {ig_info}</p>
                 <p><strong>Total ValueSets found:</strong> {len(table_data)}</p>
+                <p><strong>Terminology Server:</strong> {endpoint if endpoint else 'Not configured'}</p>
                 <p><strong>Criteria:</strong> {criteria_description}</p>
             </div>
             
@@ -779,6 +931,7 @@ def run_valueset_binding_report(npm_path_list, outdir, config_file):
                 <thead>
                     <tr>
                         <th class="valueset-col">ValueSet</th>
+                        <th class="expansion-col">Expansion Count</th>
                         <th class="profiles-col">Profiles</th>
                     </tr>
                 </thead>
@@ -790,6 +943,7 @@ def run_valueset_binding_report(npm_path_list, outdir, config_file):
             html_content += f"""
                     <tr>
                         <td>{row['ValueSet']}</td>
+                        <td style="text-align: center;">{row['Expansion Count']}</td>
                         <td>{row['Profiles']}</td>
                     </tr>
             """
