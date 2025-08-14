@@ -14,12 +14,20 @@ import logging
 ## get_valueset_title: Attempt to get ValueSet title from URL
 ##    Try to fetch from terminology server, fallback to name from URL
 ##
-def get_valueset_title(vs_url, endpoint=None, local_packages=None):
+def get_valueset_title(vs_url, endpoint=None, local_packages=None, binding_name=None):
     """
     Get the title of a ValueSet from its URL
-    First try to find in local packages, then in FHIR package cache, then try terminology server if available
-    Otherwise extract name from URL as fallback
-    Clean up id|version format to show just the name/title
+    Try local packages first, then remote terminology server,
+    finally fall back to binding name from profile or URL-based name
+    
+    Args:
+        vs_url: ValueSet canonical URL
+        endpoint: FHIR terminology server endpoint (optional)
+        local_packages: List of local FHIR package paths to search (optional)
+        binding_name: Binding name from elementdefinition-bindingName extension (optional)
+    
+    Returns:
+        Clean ValueSet title/name
     """
     vs_name = vs_url.split('/')[-1] if '/' in vs_url else vs_url
     # Remove version suffix for comparison (e.g., "consent-data-meaning|4.0.1" -> "consent-data-meaning")
@@ -121,7 +129,13 @@ def get_valueset_title(vs_url, endpoint=None, local_packages=None):
         except Exception as e:
             logger.debug(f"Could not fetch ValueSet title from server for {vs_url}: {e}")
     
-    # Fallback to name extracted from URL
+    # Try binding name from profile if available
+    if binding_name:
+        logger.info(f"Using binding name from profile for ValueSet {vs_url}: {binding_name}")
+        return clean_valueset_name(binding_name)
+    
+    # Final fallback to name extracted from URL
+    vs_name = vs_url.split('/')[-1] if '/' in vs_url else vs_url
     logger.warning(f"Could not find title for ValueSet: {vs_url}, using ID: {vs_name}")
     return clean_valueset_name(vs_name)
 
@@ -267,6 +281,20 @@ def process_binding_with_profile(category, profile, binding_results, config_opti
                         vs = el["binding"]["valueSet"]
                         binding_strength = el["binding"].get("strength", "")
                         
+                        # Extract binding name from extension if available
+                        binding_name = None
+                        if "extension" in el["binding"]:
+                            binding_extensions = el["binding"]["extension"]
+                            if not isinstance(binding_extensions, (list, tuple)):
+                                binding_extensions = [binding_extensions] if binding_extensions is not None else []
+                            
+                            for ext in binding_extensions:
+                                if (isinstance(ext, dict) and 
+                                    ext.get("url") == "http://hl7.org/fhir/StructureDefinition/elementdefinition-bindingName" and
+                                    "valueString" in ext):
+                                    binding_name = ext["valueString"]
+                                    break
+                        
                         # Only include if binding strength meets minimum requirements
                         if (vs is not None and 
                             binding_strength in minimum_binding_strengths):
@@ -284,6 +312,7 @@ def process_binding_with_profile(category, profile, binding_results, config_opti
                                 binding_results.append({
                                     'valueset_name': vs_name,
                                     'valueset_url': vs,
+                                    'binding_name': binding_name,  # Add binding name
                                     'profile_name': profile_name,
                                     'profile_title': profile_title,
                                     'profile_url': profile_url
@@ -336,6 +365,7 @@ def process_binding_with_profile(category, profile, binding_results, config_opti
                                             binding_results.append({
                                                 'valueset_name': vs_name,
                                                 'valueset_url': vs_url,
+                                                'binding_name': None,  # No binding name available for additional bindings
                                                 'profile_name': profile_name,
                                                 'profile_title': profile_title,
                                                 'profile_url': profile_url
@@ -370,6 +400,7 @@ def process_binding_with_profile(category, profile, binding_results, config_opti
                                         binding_results.append({
                                             'valueset_name': vs_name,
                                             'valueset_url': vs,
+                                            'binding_name': None,  # No binding name available for legacy additional bindings
                                             'profile_name': profile_name,
                                             'profile_title': profile_title,
                                             'profile_url': profile_url
@@ -804,7 +835,8 @@ def run_valueset_binding_report(npm_path_list, outdir, config_file):
         grouped = df_bindings.groupby(['valueset_name', 'valueset_url']).agg({
             'profile_name': list,
             'profile_title': list,
-            'profile_url': list
+            'profile_url': list,
+            'binding_name': list
         }).reset_index()
         
         # Create the final table data with sorting information
@@ -815,9 +847,17 @@ def run_valueset_binding_report(npm_path_list, outdir, config_file):
             profile_names = row['profile_name']
             profile_titles = row['profile_title']
             profile_urls = row['profile_url']
+            binding_names = row['binding_name']
             
-            # Get ValueSet title from local packages first, then external server
-            vs_title = get_valueset_title(vs_url, endpoint, npm_path_list)
+            # Get the first non-null binding name for this ValueSet
+            binding_name = None
+            for bn in binding_names:
+                if bn is not None:
+                    binding_name = bn
+                    break
+            
+            # Get ValueSet title from local packages first, then external server, then binding name
+            vs_title = get_valueset_title(vs_url, endpoint, npm_path_list, binding_name)
             
             # Get ValueSet expansion count
             expansion_count = get_valueset_expansion_count(vs_url, endpoint)
@@ -957,6 +997,68 @@ def run_valueset_binding_report(npm_path_list, outdir, config_file):
         
         with open(outfile, "w") as fh:
             fh.write(html_content)
+        
+        # Create TSV file for cross-server analysis
+        try:
+            # Create TSV filename with IG ID and server info
+            packages_config = get_config(config_file, 'packages')
+            if packages_config and len(packages_config) > 0:
+                ig_id = packages_config[0].get('name', 'unknown')
+            else:
+                ig_id = 'unknown'
+            
+            # Clean server URL for filename (remove protocol, replace special chars)
+            server_name = 'no-server'
+            if endpoint:
+                server_name = endpoint.replace('http://', '').replace('https://', '').replace('/', '_').replace(':', '_')
+            
+            tsv_filename = f'ValueSetBindings-{ig_id}-{server_name}.tsv'
+            tsv_outfile = os.path.join(outdir, tsv_filename)
+            
+            # Prepare TSV data (remove HTML tags from values)
+            tsv_data = []
+            for _, row in df_final.iterrows():
+                # Extract clean text from HTML links
+                import re
+                
+                # Extract ValueSet name from HTML link
+                vs_match = re.search(r'>([^<]+)</a>', row['ValueSet'])
+                vs_name = vs_match.group(1) if vs_match else row['ValueSet']
+                
+                # Extract ValueSet URL from HTML link
+                vs_url_match = re.search(r'href="([^"]+)"', row['ValueSet'])
+                vs_url = vs_url_match.group(1) if vs_url_match else ''
+                
+                # Extract profile names from HTML links
+                profile_matches = re.findall(r'>([^<]+)</a>', row['Profiles'])
+                profile_names = ', '.join(profile_matches) if profile_matches else row['Profiles']
+                
+                # Extract profile URLs from HTML links
+                profile_url_matches = re.findall(r'href="([^"]+)"', row['Profiles'])
+                profile_urls = ', '.join(profile_url_matches) if profile_url_matches else ''
+                
+                tsv_data.append({
+                    'ValueSet_Name': vs_name,
+                    'ValueSet_URL': vs_url,
+                    'Expansion_Count': row['Expansion Count'],
+                    'Profile_Names': profile_names,
+                    'Profile_URLs': profile_urls,
+                    'IG_ID': ig_id,
+                    'Terminology_Server': endpoint if endpoint else 'Not configured'
+                })
+            
+            # Write TSV file
+            import csv
+            with open(tsv_outfile, 'w', newline='', encoding='utf-8') as tsvfile:
+                fieldnames = ['ValueSet_Name', 'ValueSet_URL', 'Expansion_Count', 'Profile_Names', 'Profile_URLs', 'IG_ID', 'Terminology_Server']
+                writer = csv.DictWriter(tsvfile, fieldnames=fieldnames, delimiter='\t')
+                writer.writeheader()
+                writer.writerows(tsv_data)
+            
+            logger.info(f'TSV report written to: {tsv_outfile}')
+            
+        except Exception as e:
+            logger.warning(f'Failed to create TSV file: {e}')
         
         logger.info(f'ValueSet bindings report written to: {outfile}')
         logger.info(f'Total ValueSets found: {len(table_data)}')
