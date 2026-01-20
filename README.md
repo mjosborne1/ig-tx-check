@@ -33,4 +33,82 @@
    ```    
 
 ### Output
-   * Output is an html file in $rootdir/reports called `ExampleCodeSystemChecks.html`
+    * Example code validation HTML: `ExampleCodeSystemChecks.html`
+    * Focused ValueSet bindings HTML: `ValueSetBindings-<package-names>.html`
+    * Cross-server analysis TSV: `ValueSetBindings-<ig-id>-<server>.tsv`
+
+---
+
+### Features
+- Terminology server check: Verifies `CapabilityStatement` instantiates a terminology server and `fhirVersion` is `4.0.1`.
+- FHIR package cache integration: Uses your local FHIR package cache instead of npm for faster, offline-friendly runs (see `FHIR_CACHE_INTEGRATION.md`).
+- Example instance code validation: Scans IG examples and validates codes via `$validate-code` against `CodeSystem`, generating `ExampleCodeSystemChecks.html`.
+- ValueSet bindings report: Builds a focused report of ValueSets referenced in the main IG package (both snapshot and differential views), sorted by ValueSet title.
+- Configurable filtering: Control inclusion via `valueset-binding-options` (e.g., `require-must-support`, `minimum-binding-strength`).
+- ValueSet titles and counts: Resolves ValueSet titles from local packages or the terminology server and shows expansion counts via `$expand`.
+- TSV export: Writes a TSV file to support cross-server comparisons.
+
+### Configuration
+Update `./config/config.json` with these keys:
+
+```json
+{
+   "init": [
+      { "endpoint": "https://tx.hl7.org.au/fhir" }
+   ],
+   "fhir-package-cache": "/Users/<you>/.fhir/packages",
+   "packages": [
+      {
+         "name": "hl7.fhir.au.ereq",
+         "version": "dev",
+         "title": "AU eRequesting Implementation Guide"
+      }
+   ],
+   "codesystem-excluded": [
+      {
+      "uri": "http://www.mims.com.au/codes",
+      "result": "MANUAL",
+      "reason": "Manual validation required: MIMS is a proprietary code system, not published as a FHIR resource as yet"
+      },
+      {
+         "uri": "http://www.whocc.no/atc",
+         "result": "MANUAL",
+         "reason": "Manual validation required: WHO ATC classification system is not published as a FHIR resource as yet"
+      },
+      {
+         "uri": "http://example.acme.com.au/generic-packages",
+         "result": "IGNORED",
+         "reason": "Codes from 'example' code systems can not be validated, they are essentially local codes"
+      },
+      {
+         "uri": "http://pbs.gov.au/code/item",
+         "result": "MANUAL",
+         "reason": "Manual validation required: PBS licensing prevents publishing of this code system as a FHIR resource."
+      }
+   ],
+   "valueset-binding-options": {
+      "require-must-support": true,
+      "minimum-binding-strength": ["required", "extensible", "preferred"]
+   }
+}
+```
+
+Notes:
+- `fhir-package-cache` points to your local FHIR cache; version aliases like `dev`/`current` are supported with sensible fallbacks.
+- `packages` can include multiple IGs; the report filename will reflect configured package names.
+- `valueset-binding-options` controls filtering; see `FOCUSED_VALUESET_REPORT.md` for behavior and scope.
+
+### Run
+
+```bash
+# Activate venv
+source ./.venv/bin/activate
+
+# Run with default rootdir ($HOME/data/ig-tx-check)
+python main.py
+
+# Or specify a custom root directory for reports and local packages
+python main.py --rootdir /path/to/data/ig-tx-check
+```
+
+Reports are written to `$rootdir/reports`.
