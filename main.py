@@ -34,6 +34,7 @@ def main():
     ## Setup logging
     now = datetime.now() # current date and time
     ts = now.strftime("%Y%m%d-%H%M%S")
+    print(f"Run started: {now.isoformat(timespec='seconds')}")
     FORMAT='%(asctime)s %(lineno)d : %(message)s'
     logging.basicConfig(format=FORMAT, filename=os.path.join('logs',f'ig-tx-check-{ts}.log'),level=logging.INFO)
     logger.info('Started')
@@ -60,7 +61,17 @@ def main():
     # Run ValueSet binding report
     run_valueset_binding_report(npm_path_list, outdir, config_file)
     logger.info("ValueSet binding report completed")
+
+    # Run Example ValueSet membership checks against profile bindings
+    try:
+        from membership import run_example_valueset_membership_check
+        run_example_valueset_membership_check(endpoint, config_file, npm_path_list, outdir)
+        logger.info("Example ValueSet membership checks completed")
+    except Exception as e:
+        logger.warning(f"Skipping ValueSet membership checks due to error: {e}")
     
+    end_time = datetime.now()
+    print(f"Run finished: {end_time.isoformat(timespec='seconds')}")
     logger.info("Finished")
 
 if __name__ == '__main__':

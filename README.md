@@ -34,6 +34,7 @@
 
 ### Output
     * Example code validation HTML: `ExampleCodeSystemChecks.html`
+    * Example ValueSet membership HTML: `ExampleValueSetMembershipChecks.html`
     * Focused ValueSet bindings HTML: `ValueSetBindings-<package-names>.html`
     * Cross-server analysis TSV: `ValueSetBindings-<ig-id>-<server>.tsv`
 

@@ -752,53 +752,43 @@ def run_capability_test(endpoint):
 def run_example_check(endpoint, testconf, npm_path_list, outdir):
     """
       Test that the IG example instance codes are in the terminology server
-      results of the checks reported in an html file
+      Results are reported in per-IG html files to avoid overwrite across runs.
     """
-    outfile = os.path.join(outdir, 'ExampleCodeSystemChecks.html')  
     cs_excluded = get_config(testconf, 'codesystem-excluded')
-    all_results = []
+    overall_fail = False
 
     for ig_folder in npm_path_list:
+        ig_suffix = os.path.basename(ig_folder)
+        outfile = os.path.join(outdir, f'ExampleCodeSystemChecks-{ig_suffix}.html')
+
+        ig_results = []
         example_dir = os.path.join(ig_folder, "package", "example")
 
         for ex in get_json_files(example_dir):
             results = search_json_file(endpoint, cs_excluded, ex)
-            all_results.extend(results)
-    # Output as HTML  
-    # Flatten the list of lists
+            if results:
+                ig_results.extend(results)
 
-    header = ['file','code','system','result','reason']
-    df_results = pd.DataFrame(all_results, columns=header)
-    exit_status = 1 if (df_results['result'] == 'FAIL').any() else 0
-    html_content = df_results.to_html()
+        # Output as HTML per IG
+        header = ['file','code','system','result','reason']
+        df_results = pd.DataFrame(ig_results, columns=header)
+        if not df_results.empty and (df_results['result'] == 'FAIL').any():
+            overall_fail = True
+        html_content = df_results.to_html()
 
-    with open(outfile, "w") as fh:
-        fh.write(html_content)
+        with open(outfile, "w") as fh:
+            fh.write(html_content)
+        logger.info(f"Example CodeSystem checks written to: {outfile} ({len(ig_results)} rows)")
 
-    return exit_status
+    return 1 if overall_fail else 0
 
 
 def run_valueset_binding_report(npm_path_list, outdir, config_file):
     """
-      Generate a report of ValueSet bindings from FHIR profiles
-      results reported in an HTML file with ValueSet and Profile information
-      Filtering based on configuration options for MustSupport and binding strength
+      Generate per-IG reports of ValueSet bindings from FHIR profiles.
+      Each IG produces its own HTML with ValueSet and Profile information.
+      Filtering based on configuration options for MustSupport and binding strength.
     """
-    # Generate filename with package names
-    try:
-        packages_config = get_config(config_file, 'packages')
-        if packages_config and len(packages_config) > 0:
-            package_names = [pkg.get('name', 'unknown') for pkg in packages_config]
-            package_suffix = '-'.join(package_names)
-            filename = f'ValueSetBindings-{package_suffix}.html'
-        else:
-            filename = 'ValueSetBindings.html'
-    except:
-        filename = 'ValueSetBindings.html'
-    
-    outfile = os.path.join(outdir, filename)
-    all_bindings = []
-    
     # Load configuration options with defaults
     try:
         config_options = get_config(config_file, 'valueset-binding-options')
@@ -808,12 +798,11 @@ def run_valueset_binding_report(npm_path_list, outdir, config_file):
                 "minimum-binding-strength": ["required", "extensible", "preferred"]
             }
     except:
-        # Fallback to defaults if config section doesn't exist
         config_options = {
             "require-must-support": True,
             "minimum-binding-strength": ["required", "extensible", "preferred"]
         }
-    
+
     # Get endpoint for ValueSet title lookup
     try:
         endpoint_config = get_config(config_file, 'init')
@@ -822,42 +811,45 @@ def run_valueset_binding_report(npm_path_list, outdir, config_file):
         endpoint = None
 
     for ig_folder in npm_path_list:
+        ig_suffix = os.path.basename(ig_folder)
+        outfile = os.path.join(outdir, f'ValueSetBindings-{ig_suffix}.html')
+
         logger.info(f'Processing ValueSet bindings for IG folder: {ig_folder}')
-        all_bindings = process_ig_bindings(ig_folder, all_bindings, config_options)
+        ig_bindings = process_ig_bindings(ig_folder, [], config_options)
 
-    logger.info(f'Total bindings found: {len(all_bindings)}')
+        logger.info(f'Total bindings found for {ig_suffix}: {len(ig_bindings)}')
 
-    # Create DataFrame and output as HTML
-    if all_bindings:
-        df_bindings = pd.DataFrame(all_bindings)
-        
-        # Group by ValueSet and aggregate profiles
-        grouped = df_bindings.groupby(['valueset_name', 'valueset_url']).agg({
-            'profile_name': list,
-            'profile_title': list,
-            'profile_url': list,
-            'binding_name': list
-        }).reset_index()
-        
-        # Create the final table data with sorting information
-        table_data = []
-        for _, row in grouped.iterrows():
-            vs_name = row['valueset_name']
-            vs_url = row['valueset_url']
-            profile_names = row['profile_name']
-            profile_titles = row['profile_title']
-            profile_urls = row['profile_url']
-            binding_names = row['binding_name']
-            
-            # Get the first non-null binding name for this ValueSet
-            binding_name = None
-            for bn in binding_names:
-                if bn is not None:
-                    binding_name = bn
-                    break
-            
-            # Get ValueSet title from local packages first, then external server, then binding name
-            vs_title = get_valueset_title(vs_url, endpoint, npm_path_list, binding_name)
+        # Create DataFrame and output as HTML for this IG
+        if ig_bindings:
+            df_bindings = pd.DataFrame(ig_bindings)
+
+            # Group by ValueSet and aggregate profiles
+            grouped = df_bindings.groupby(['valueset_name', 'valueset_url']).agg({
+                'profile_name': list,
+                'profile_title': list,
+                'profile_url': list,
+                'binding_name': list
+            }).reset_index()
+
+            # Create the final table data with sorting information
+            table_data = []
+            for _, row in grouped.iterrows():
+                vs_name = row['valueset_name']
+                vs_url = row['valueset_url']
+                profile_names = row['profile_name']
+                profile_titles = row['profile_title']
+                profile_urls = row['profile_url']
+                binding_names = row['binding_name']
+
+                # Get the first non-null binding name for this ValueSet
+                binding_name = None
+                for bn in binding_names:
+                    if bn is not None:
+                        binding_name = bn
+                    # Get ValueSet title from local packages first, then external server, then binding name
+                    vs_title = get_valueset_title(vs_url, endpoint, [ig_folder], binding_name)
+                # Get ValueSet title from local packages first, then external server, then binding name
+                vs_title = get_valueset_title(vs_url, endpoint, [ig_folder], binding_name)
             
             # Get ValueSet expansion count
             expansion_count = get_valueset_expansion_count(vs_url, endpoint)
