@@ -220,6 +220,7 @@ def get_valueset_expansion_count(vs_url, endpoint=None):
     return None
 
 logger = logging.getLogger(__name__)
+_validate_code_cache = {}
 SKIP_DIRS = ["assets", "temp", "templates"]
 EXTS = ["json"]
 
@@ -540,7 +541,31 @@ def get_json_files(root,filter=None):
             yield item
 
 
-def validate_code_with_fhirpath(resource, fhirpath_expression, endpoint, cs_excluded, file):
+def get_json_files_recursive(root):
+    pattern = os.path.join(root, "**", "*.json")
+    for item in glob.glob(pattern, recursive=True):
+        if isfile(item):
+            yield item
+
+
+def get_additional_example_dirs(config_file):
+    try:
+        additional = get_config(config_file, 'additional-examples') or []
+    except Exception:
+        return []
+
+    dirs = []
+    for entry in additional:
+        if isinstance(entry, dict):
+            path = entry.get('path')
+        else:
+            path = entry
+        if path:
+            dirs.append(path)
+    return dirs
+
+
+def validate_code_with_fhirpath(resource, fhirpath_expression, endpoint, cs_excluded, file, seen_validations=None):
     results = []
     codes = evaluate(resource, fhirpath_expression)
     # Ensure codes is iterable
@@ -552,6 +577,11 @@ def validate_code_with_fhirpath(resource, fhirpath_expression, endpoint, cs_excl
             system = code_info.get('system')
             code = code_info.get('code')
             if system and code and isinstance(system, str) and isinstance(code, str) and system.strip() and code.strip():
+                if seen_validations is not None:
+                    key = (system, code)
+                    if key in seen_validations:
+                        continue
+                    seen_validations.add(key)
                 result = validate_example_code(endpoint, cs_excluded, file, system, code)
                 results.append(result)
             else:
@@ -570,6 +600,13 @@ def validate_example_code(endpoint, cs_excluded, file, system, code):
      
        Return: test_result dict , code and error
     """
+    cache_key = (endpoint, system, code)
+    if cache_key in _validate_code_cache:
+        cached = _validate_code_cache[cache_key]
+        result = cached.copy()
+        result['file'] = split_node_path(file)
+        return result
+
     cmd = f'{endpoint}/CodeSystem/$validate-code?url='
     query = cmd + quote(system, safe='') + f'&code={code}'
     headers = {'Accept': 'application/fhir+json'}
@@ -605,6 +642,7 @@ def validate_example_code(endpoint, cs_excluded, file, system, code):
         else:
             test_result['result'] = 'FAIL'
             test_result['reason'] = f'http status: {response.status_code}'
+    _validate_code_cache[cache_key] = test_result.copy()
     return test_result
 
 
@@ -715,8 +753,9 @@ def search_json_file(endpoint, cs_excluded, file):
         fhirpath_expressions.extend(bundle_expressions)
 
     test_result_list = []
+    seen_validations = set()
     for expression in fhirpath_expressions:
-        results = validate_code_with_fhirpath(resource, expression, endpoint, cs_excluded, file)
+        results = validate_code_with_fhirpath(resource, expression, endpoint, cs_excluded, file, seen_validations)
         if results:
             test_result_list.extend(results)
 
@@ -780,6 +819,29 @@ def run_example_check(endpoint, testconf, npm_path_list, outdir):
             fh.write(html_content)
         logger.info(f"Example CodeSystem checks written to: {outfile} ({len(ig_results)} rows)")
 
+    additional_dirs = get_additional_example_dirs(testconf)
+    for extra_dir in additional_dirs:
+        if not os.path.exists(extra_dir):
+            logger.warning(f"Additional examples path not found: {extra_dir}")
+            continue
+        extra_suffix = os.path.basename(extra_dir)
+        outfile = os.path.join(outdir, f'ExampleCodeSystemChecks-additional-{extra_suffix}.html')
+        extra_results = []
+        for ex in get_json_files_recursive(extra_dir):
+            results = search_json_file(endpoint, cs_excluded, ex)
+            if results:
+                extra_results.extend(results)
+
+        header = ['file','code','system','result','reason']
+        df_results = pd.DataFrame(extra_results, columns=header)
+        if not df_results.empty and (df_results['result'] == 'FAIL').any():
+            overall_fail = True
+        html_content = df_results.to_html()
+
+        with open(outfile, "w") as fh:
+            fh.write(html_content)
+        logger.info(f"Additional example CodeSystem checks written to: {outfile} ({len(extra_results)} rows)")
+
     return 1 if overall_fail else 0
 
 
@@ -814,6 +876,9 @@ def run_valueset_binding_report(npm_path_list, outdir, config_file):
         ig_suffix = os.path.basename(ig_folder)
         outfile = os.path.join(outdir, f'ValueSetBindings-{ig_suffix}.html')
 
+        vs_title_cache = {}
+        vs_expansion_cache = {}
+
         logger.info(f'Processing ValueSet bindings for IG folder: {ig_folder}')
         ig_bindings = process_ig_bindings(ig_folder, [], config_options)
 
@@ -846,45 +911,46 @@ def run_valueset_binding_report(npm_path_list, outdir, config_file):
                 for bn in binding_names:
                     if bn is not None:
                         binding_name = bn
-                    # Get ValueSet title from local packages first, then external server, then binding name
-                    vs_title = get_valueset_title(vs_url, endpoint, [ig_folder], binding_name)
+                        break
+
                 # Get ValueSet title from local packages first, then external server, then binding name
-                vs_title = get_valueset_title(vs_url, endpoint, [ig_folder], binding_name)
-            
-            # Get ValueSet expansion count
-            expansion_count = get_valueset_expansion_count(vs_url, endpoint)
-            if expansion_count is not None:
-                expansion_display = str(expansion_count)
-            else:
-                expansion_display = "N/A"
-            
-            # Create ValueSet link using title
-            vs_link = f'<a href="{vs_url}" target="_blank">{vs_title}</a>'
-            
-            # Create profile links using titles (comma separated)
-            # Remove duplicates by using a set of URLs to track unique profiles
-            seen_urls = set()
-            unique_profile_data = []
-            for name, title, url in zip(profile_names, profile_titles, profile_urls):
-                if url not in seen_urls:
-                    seen_urls.add(url)
-                    unique_profile_data.append((name, title, url))
-            
-            # Sort profiles alphabetically by title
-            unique_profile_data.sort(key=lambda x: x[1].lower())
-            
-            # Create the profile links
-            unique_profile_links = []
-            for name, title, url in unique_profile_data:
-                unique_profile_links.append(f'<a href="{url}" target="_blank">{title}</a>')
-            profiles_combined = ', '.join(unique_profile_links)
-            
-            table_data.append({
-                'ValueSet': vs_link,
-                'Expansion Count': expansion_display,
-                'Profiles': profiles_combined,
-                'sort_title': vs_title.lower()  # Add sorting key
-            })
+                if vs_url not in vs_title_cache:
+                    vs_title_cache[vs_url] = get_valueset_title(vs_url, endpoint, [ig_folder], binding_name)
+                vs_title = vs_title_cache[vs_url]
+
+                # Get ValueSet expansion count (cached per ValueSet)
+                if vs_url not in vs_expansion_cache:
+                    vs_expansion_cache[vs_url] = get_valueset_expansion_count(vs_url, endpoint)
+                expansion_count = vs_expansion_cache[vs_url]
+                expansion_display = str(expansion_count) if expansion_count is not None else "N/A"
+
+                # Create ValueSet link using title
+                vs_link = f'<a href="{vs_url}" target="_blank">{vs_title}</a>'
+
+                # Create profile links using titles (comma separated)
+                # Remove duplicates by using a set of URLs to track unique profiles
+                seen_urls = set()
+                unique_profile_data = []
+                for name, title, url in zip(profile_names, profile_titles, profile_urls):
+                    if url not in seen_urls:
+                        seen_urls.add(url)
+                        unique_profile_data.append((name, title, url))
+
+                # Sort profiles alphabetically by title
+                unique_profile_data.sort(key=lambda x: x[1].lower())
+
+                # Create the profile links
+                unique_profile_links = []
+                for name, title, url in unique_profile_data:
+                    unique_profile_links.append(f'<a href="{url}" target="_blank">{title}</a>')
+                profiles_combined = ', '.join(unique_profile_links)
+
+                table_data.append({
+                    'ValueSet': vs_link,
+                    'Expansion Count': expansion_display,
+                    'Profiles': profiles_combined,
+                    'sort_title': vs_title.lower()  # Add sorting key
+                })
         
         # Sort by ValueSet title alphabetically
         table_data.sort(key=lambda x: x['sort_title'])

@@ -36,7 +36,10 @@ def main():
     ts = now.strftime("%Y%m%d-%H%M%S")
     print(f"Run started: {now.isoformat(timespec='seconds')}")
     FORMAT='%(asctime)s %(lineno)d : %(message)s'
-    logging.basicConfig(format=FORMAT, filename=os.path.join('logs',f'ig-tx-check-{ts}.log'),level=logging.INFO)
+
+    logs_dir = os.path.join(os.getcwd(), 'logs')
+    check_path(logs_dir)
+    logging.basicConfig(format=FORMAT, filename=os.path.join(logs_dir, f'ig-tx-check-{ts}.log'),level=logging.INFO)
     logger.info('Started')
     config_file = os.path.join(os.getcwd(),'config','config.json')
     # Get the initial config

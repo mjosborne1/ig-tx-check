@@ -1,0 +1,369 @@
+{
+    "resourceType": "DiagnosticReport",
+    "id": "279584",
+    "meta": {
+        "versionId": "1",
+        "lastUpdated": "2023-07-07T12:46:02.966+00:00",
+        "source": "#6EOliVJbPHzjBDFi"
+    },
+    "text": {
+        "status": "generated",
+        "div": "<div xmlns=\"http://www.w3.org/1999/xhtml\"><div class=\"hapiHeaderText\"> Measurement of Microscopy, culture and susceptibility in Urine </div><table class=\"hapiPropertyTable\"><tbody><tr><td>Status</td><td>FINAL</td></tr></tbody></table></div>"
+    },
+    "identifier": [
+        {
+            "use": "secondary",
+            "type": {
+                "coding": [
+                    {
+                        "system": "http://hl7.org/fhir/v2/0203",
+                        "code": "RI",
+                        "display": "Resource identifier"
+                    }
+                ],
+                "text": "OBR-1: OBR-SetID for the service request"
+            },
+            "system": "http://ns.auslab.com.au/id/set-id",
+            "value": "1"
+        },
+        {
+            "use": "usual",
+            "type": {
+                "coding": [
+                    {
+                        "system": "http://hl7.org/fhir/v2/0203",
+                        "code": "PLAC",
+                        "display": "Placer Identifier"
+                    }
+                ],
+                "text": "OBR-2-1: External ID"
+            },
+            "system": "http://ns.auslab.com.au/id/plrnum",
+            "value": "675806351"
+        },
+        {
+            "use": "official",
+            "type": {
+                "coding": [
+                    {
+                        "system": "http://hl7.org/fhir/v2/0203",
+                        "code": "FILL",
+                        "display": "Filler Identifier"
+                    }
+                ],
+                "text": "OBR-3-1: Laboratory Number"
+            },
+            "system": "http://ns.auslab.com.au/id/flrnum",
+            "value": "675806351"
+        }
+    ],
+    "basedOn": [
+        {
+            "reference": "ServiceRequest/279580"
+        }
+    ],
+    "status": "final",
+    "category": [
+        {
+            "coding": [
+                {
+                    "system": "https://www.hl7.org/fhir/v2/0074",
+                    "code": "MB",
+                    "display": "Microbiology"
+                }
+            ],
+            "text": "Microbiology"
+        }
+    ],
+    "code": {
+        "coding": [
+            {
+                "system": "http://snomed.info/sct",
+                "code": "401324008",
+                "display": "Urine microscopy, culture and sensitivities"
+            },
+            {
+                "system": "http://ns.auslab.com.au/id/ord",
+                "code": "URINE",
+                "display": "Urine M/C/S"
+            }
+        ],
+        "text": "Measurement of Microscopy, culture and susceptibility in Urine"
+    },
+    "subject": {
+        "reference": "Patient/279578"
+    },
+    "encounter": {
+        "reference": "Encounter/279579"
+    },
+    "effectiveDateTime": "2015-01-01T05:30:00",
+    "result": [
+        {
+            "reference": "Observation/279585"
+        }
+    ]
+}
+
+{
+    "resourceType": "Observation",
+    "id": "279585",
+    "meta": {
+        "versionId": "1",
+        "lastUpdated": "2023-07-07T12:46:02.966+00:00",
+        "source": "#6EOliVJbPHzjBDFi"
+    },
+    "identifier": [
+        {
+            "use": "secondary",
+            "type": {
+                "coding": [
+                    {
+                        "system": "http://hl7.org/fhir/v2/0203",
+                        "code": "OBI",
+                        "display": "Observation Instance"
+                    }
+                ],
+                "text": "OBX-1: OBX-SetID for the observation"
+            },
+            "system": "http://ns.auslab.com.au/id/set-id",
+            "value": "5"
+        },
+        {
+            "use": "official",
+            "type": {
+                "coding": [
+                    {
+                        "system": "http://hl7.org/fhir/v2/0203",
+                        "code": "OBI",
+                        "display": "Observation Instance"
+                    }
+                ],
+                "text": "OBX-5-1: Observation Identifier"
+            },
+            "system": "http://ns.auslab.com.au/id/oid",
+            "value": "NMR"
+        }
+    ],
+    "basedOn": [
+        {
+            "reference": "ServiceRequest/279583"
+        }
+    ],
+    "status": "final",
+    "category": [
+        {
+            "coding": [
+                {
+                    "system": "http://terminology.hl7.org/CodeSystem/observation-category",
+                    "code": "laboratory",
+                    "display": "Laboratory"
+                }
+            ]
+        }
+    ],
+    "code": {
+        "coding": [
+            {
+                "system": "http://loinc.org",
+                "code": "20430-5",
+                "display": "Culture medium [Type] in Isolate"
+            },
+            {
+                "system": "http://ns.auslab.com.au/obx/id",
+                "code": "CULT1",
+                "display": "Culture Comment Line 1"
+            }
+        ],
+        "text": "Type of culture for Isolate to be sent for Whole Genome Sequencing (WGS)"
+    },
+    "subject": {
+        "reference": "Patient/279578"
+    },
+    "encounter": {
+        "reference": "Encounter/279579"
+    },
+    "issued": "2015-01-01T06:08:00.000+10:00",
+    "performer": [
+        {
+            "reference": "Organization/6"
+        }
+    ],
+    "valueCodeableConcept": {
+        "coding": [
+            {
+                "system": "http://snomed.info/sct",
+                "code": "NMR",
+                "display": "Culture not indicated by microscopy result."
+            },
+            {
+                "system": "http://ns.auslab.com.au/obx/value",
+                "code": "NMR",
+                "display": "Culture not indicated by microscopy result."
+            }
+        ],
+        "text": "Culture not indicated by microscopy result."
+    },
+    "specimen": {
+        "reference": "Specimen/279582"
+    },
+    "component": [
+        {
+            "code": {
+                "coding": [
+                    {
+                        "system": "http://loinc.org",
+                        "code": "59464-8",
+                        "display": "Microbiologist review of results"
+                    },
+                    {
+                        "system": "http://ns.auslab.com.au/obx/id",
+                        "code": "MSTAT",
+                        "display": "Micro Report Status"
+                    }
+                ],
+                "text": "Microbiologist report status against the cultured isolate"
+            },
+            "valueCodeableConcept": {
+                "coding": [
+                    {
+                        "system": "http://ns.auslab.com.au/obx/value",
+                        "code": "COM",
+                        "display": "COMPLETE"
+                    }
+                ],
+                "text": "The report from the Microbiologist against the cultured isolate is COMPLETE"
+            },
+            "interpretation": [
+                {
+                    "coding": [
+                        {
+                            "system": "http://hl7.org/fhir/ValueSet/observation-interpretation",
+                            "code": "H",
+                            "display": "High"
+                        }
+                    ],
+                    "text": "The bacterial culture has been detected at higher than reference range value in the urine"
+                }
+            ]
+        },
+        {
+            "code": {
+                "coding": [
+                    {
+                        "system": "http://loinc.org",
+                        "code": "20453-7",
+                        "display": "Epithelial cells [Presence] in Urine sediment by Light microscopy"
+                    },
+                    {
+                        "system": "http://ns.auslab.com.au/obx/id",
+                        "code": "UEPI",
+                        "display": "Urine Micro Epi's"
+                    }
+                ],
+                "text": "Microbiologist report of Epithelial cells [Presence] in Urine sediment by Light microscopy"
+            },
+            "valueQuantity": {
+                "value": 10.0,
+                "comparator": "<",
+                "system": "http://unitsofmeasure.org"
+            }
+        },
+        {
+            "code": {
+                "coding": [
+                    {
+                        "system": "http://loinc.org",
+                        "code": "88970-9",
+                        "display": "RBC casts [#/area] in Urine sediment"
+                    },
+                    {
+                        "system": "http://ns.auslab.com.au/obx/id",
+                        "code": "URBC",
+                        "display": "Urine Micro RBC"
+                    }
+                ],
+                "text": "Measurement of the presence of Erythrocyte casts in cultured Urine sample"
+            },
+            "valueQuantity": {
+                "value": 130.0,
+                "system": "http://unitsofmeasure.org"
+            },
+            "interpretation": [
+                {
+                    "coding": [
+                        {
+                            "system": "http://hl7.org/fhir/ValueSet/observation-interpretation",
+                            "code": "H",
+                            "display": "High"
+                        }
+                    ],
+                    "text": "The bacterial culture has been detected at higher than reference range value in the urine"
+                }
+            ],
+            "referenceRange": [
+                {
+                    "type": {
+                        "coding": [
+                            {
+                                "system": "http://snomed.info/sct",
+                                "code": "442705008",
+                                "display": "Reference range interpretation value"
+                            }
+                        ],
+                        "text": "The range that is recommended by a relevant professional body"
+                    },
+                    "text": "< 10"
+                }
+            ]
+        },
+        {
+            "code": {
+                "coding": [
+                    {
+                        "system": "http://loinc.org",
+                        "code": "88976-6",
+                        "display": "WBC casts [#/area] in Urine sediment"
+                    },
+                    {
+                        "system": "http://ns.auslab.com.au/obx/id",
+                        "code": "UWBC",
+                        "display": "Urine Micro WBC"
+                    }
+                ],
+                "text": "Measurement of the presence of Leukocyte casts in cultured Urine sample"
+            },
+            "valueQuantity": {
+                "value": 10.0,
+                "comparator": "<",
+                "system": "http://unitsofmeasure.org"
+            },
+            "interpretation": [
+                {
+                    "coding": [
+                        {
+                            "system": "http://hl7.org/fhir/ValueSet/observation-interpretation",
+                            "code": "N",
+                            "display": "Normal"
+                        }
+                    ],
+                    "text": "The bacterial culture has been detected within the reference range value in the urine"
+                }
+            ],
+            "referenceRange": [
+                {
+                    "type": {
+                        "coding": [
+                            {
+                                "system": "http://snomed.info/sct",
+                                "code": "442705008",
+                                "display": "Reference range interpretation value"
+                            }
+                        ],
+                        "text": "The range that is recommended by a relevant professional body"
+                    },
+                    "text": "< 10"
+                }
+            ]
+        }
+    ]
+}

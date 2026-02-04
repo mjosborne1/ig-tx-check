@@ -17,14 +17,14 @@
   },
   "packages": [
     {
-      "name": "hl7.fhir.au.core",
-      "version": "current",
-      "title": "AU Core Implementation Guide"
+      "name": "hl7.fhir.au.ereq",
+      "version": "dev",
+      "title": "AU eRequesting Implementation Guide"
     }
   ],
   "additional-examples": [
     {
-      "path": "/Users/osb074/Development/hl7au/au-fhir-test-data/au-fhir-test-data-set/au-core"
+      "path": "/Users/osb074/Development/hl7au/au-fhir-test-data/au-fhir-test-data-set/au-erequesting"
     }
   ],
   "codesystem-excluded": [

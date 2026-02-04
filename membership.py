@@ -6,6 +6,7 @@ from fhirpathpy import evaluate
 from utils import get_config, split_node_path
 
 logger = logging.getLogger(__name__)
+_valueset_validate_cache = {}
 
 
 def validate_code_in_valueset(endpoint, valueset_url, coding):
@@ -21,6 +22,10 @@ def validate_code_in_valueset(endpoint, valueset_url, coding):
         dict: {'result': 'PASS'|'CHECK'|'NOT_APPLICABLE', 'reason': str, 'status_code': int}
     """
     try:
+        cache_key = (endpoint, valueset_url, coding.get('system'), coding.get('code'))
+        if cache_key in _valueset_validate_cache:
+            return _valueset_validate_cache[cache_key]
+
         # Split versioned ValueSet URL
         if '|' in valueset_url:
             base_url, version = valueset_url.split('|', 1)
@@ -89,7 +94,9 @@ def validate_code_in_valueset(endpoint, valueset_url, coding):
                     reason = f'http status: {status}'
             except Exception:
                 reason = f'http status: {status}'
-        return {"result": result_flag, "reason": reason, "status_code": status}
+        result = {"result": result_flag, "reason": reason, "status_code": status}
+        _valueset_validate_cache[cache_key] = result
+        return result
     except Exception as e:
         logger.debug(f"Error validating coding in ValueSet {valueset_url}: {e}")
         return {"result": 'CHECK', "reason": f'exception: {e}', "status_code": 0}
@@ -341,6 +348,20 @@ def run_example_valueset_membership_check(endpoint, config_file, npm_path_list, 
             excluded_cs_uris.add(base_uri)
             cs_reason_map[base_uri] = exc.get('reason', 'Codesystem is excluded')
 
+    # Load additional example directories
+    try:
+        additional_examples = get_config(config_file, 'additional-examples') or []
+    except Exception:
+        additional_examples = []
+    additional_dirs = []
+    for entry in additional_examples:
+        if isinstance(entry, dict):
+            path = entry.get('path')
+        else:
+            path = entry
+        if path:
+            additional_dirs.append(path)
+
     for ig_folder in npm_path_list:
         # Derive a stable filename suffix from the package folder
         ig_suffix = os.path.basename(ig_folder)
@@ -350,138 +371,166 @@ def run_example_valueset_membership_check(endpoint, config_file, npm_path_list, 
 
         example_dir = os.path.join(ig_folder, 'package', 'example')
         package_dir = os.path.join(ig_folder, 'package')
-        for ex in glob_json(example_dir):
-            try:
-                with open(ex, 'r') as f:
-                    resource = json.load(f)
-                
-                # Try to get explicit profiles from meta.profile
-                profiles = resource.get('meta', {}).get('profile', []) or []
-                if not isinstance(profiles, (list, tuple)):
-                    profiles = [profiles]
-                profiles = [p for p in profiles if p]  # Filter out empty strings
-                
-                # Fallback: if no explicit profile, infer from resource type
-                resource_type = resource.get('resourceType')
-                if not profiles and resource_type:
-                    logger.debug(f"No explicit profile for {resource_type} in {ex}, inferring from resource type")
-                    inferred_profile_paths = find_profiles_by_resource_type(package_dir, resource_type)
-                    if inferred_profile_paths:
-                        # Extract URLs from inferred profiles and use those paths directly
-                        for profile_path in inferred_profile_paths:
-                            try:
-                                with open(profile_path, 'r') as pf:
-                                    profile_data = json.load(pf)
-                                    profile_url = profile_data.get('url')
-                                    if profile_url:
-                                        profiles.append(profile_url)
-                            except Exception:
-                                pass
-                
-                # Build merged binding map from all referenced or inferred profiles
-                merged_bindings = {}
-                for purl in profiles:
-                    profile_path = find_profile_by_url(package_dir, purl)
-                    if not profile_path:
-                        logger.debug(f"Profile not found for example {ex}: {purl}")
+        example_dirs = [(example_dir, False)]
+        for extra_dir in additional_dirs:
+            if not os.path.exists(extra_dir):
+                logger.warning(f"Additional examples path not found: {extra_dir}")
+                continue
+            example_dirs.append((extra_dir, True))
+
+        for root_dir, recursive in example_dirs:
+            for ex in glob_json(root_dir, recursive=recursive):
+                try:
+                    with open(ex, 'r') as f:
+                        resource = json.load(f)
+                    
+                    # Try to get explicit profiles from meta.profile
+                    profiles = resource.get('meta', {}).get('profile', []) or []
+                    if not isinstance(profiles, (list, tuple)):
+                        profiles = [profiles]
+                    profiles = [p for p in profiles if p]  # Filter out empty strings
+                    
+                    # Fallback: if no explicit profile, infer from resource type
+                    resource_type = resource.get('resourceType')
+                    if not profiles and resource_type:
+                        logger.debug(f"No explicit profile for {resource_type} in {ex}, inferring from resource type")
+                        inferred_profile_paths = find_profiles_by_resource_type(package_dir, resource_type)
+                        if inferred_profile_paths:
+                            # Extract URLs from inferred profiles and use those paths directly
+                            for profile_path in inferred_profile_paths:
+                                try:
+                                    with open(profile_path, 'r') as pf:
+                                        profile_data = json.load(pf)
+                                        profile_url = profile_data.get('url')
+                                        if profile_url:
+                                            profiles.append(profile_url)
+                                except Exception:
+                                    pass
+                    
+                    # Build merged binding map from all referenced or inferred profiles
+                    merged_bindings = {}
+                    for purl in profiles:
+                        profile_path = find_profile_by_url(package_dir, purl)
+                        if not profile_path:
+                            logger.debug(f"Profile not found for example {ex}: {purl}")
+                            continue
+                        bmap = build_binding_map(profile_path, config_options)
+                        for k, v in bmap.items():
+                            merged_bindings.setdefault(k, []).extend(v)
+
+                    if not merged_bindings:
+                        # No binding info; skip this example
                         continue
-                    bmap = build_binding_map(profile_path, config_options)
-                    for k, v in bmap.items():
-                        merged_bindings.setdefault(k, []).extend(v)
 
-                if not merged_bindings:
-                    # No binding info; skip this example
-                    continue
+                    # Collect codings with their resource paths
+                    codings = collect_codings_with_paths(resource)
+                    seen_validations = set()
+                    for path, coding in codings:
+                        bind_keys = list(merged_bindings.keys())
+                        matched_paths = best_binding_paths(path, bind_keys)
+                        if not matched_paths:
+                            continue
+                        for mp in matched_paths:
+                            # Deduplicate bindings per path
+                            unique_bindings = []
+                            seen_bindings = set()
+                            for entry in merged_bindings.get(mp, []):
+                                vs_url = entry.get('valueSet')
+                                strength = entry.get('strength')
+                                key = (vs_url, strength)
+                                if key in seen_bindings:
+                                    continue
+                                seen_bindings.add(key)
+                                unique_bindings.append(entry)
 
-                # Collect codings with their resource paths
-                codings = collect_codings_with_paths(resource)
-                for path, coding in codings:
-                    bind_keys = list(merged_bindings.keys())
-                    matched_paths = best_binding_paths(path, bind_keys)
-                    if not matched_paths:
-                        continue
-                    for mp in matched_paths:
-                        for entry in merged_bindings.get(mp, []):
-                            vs_url = entry.get('valueSet')
-                            strength = entry.get('strength')
+                            for entry in unique_bindings:
+                                vs_url = entry.get('valueSet')
+                                strength = entry.get('strength')
 
-                            # Check if CodeSystem is excluded
-                            coding_system = coding.get('system')
-                            cs_base = coding_system.split('|')[0] if coding_system and '|' in coding_system else coding_system
-                            if cs_base in excluded_cs_uris:
-                                reason = f"Codesystem is excluded"
-                                if cs_base in cs_reason_map:
-                                    reason = f"Codesystem is excluded: {cs_reason_map[cs_base]}"
+                                # Check if CodeSystem is excluded
+                                coding_system = coding.get('system')
+                                cs_base = coding_system.split('|')[0] if coding_system and '|' in coding_system else coding_system
+                                if cs_base in excluded_cs_uris:
+                                    reason = f"Codesystem is excluded"
+                                    if cs_base in cs_reason_map:
+                                        reason = f"Codesystem is excluded: {cs_reason_map[cs_base]}"
+                                    results_rows.append({
+                                        'file': split_node_path(ex),
+                                        'source': ex,
+                                        'path': path,
+                                        'binding_path': mp,
+                                        'system': coding_system,
+                                        'code': coding.get('code'),
+                                        'valueset': vs_url,
+                                        'strength': strength,
+                                        'vs_result': 'EXCLUDED',
+                                        'reason': reason
+                                    })
+                                    continue
+                                
+                                # Check if ValueSet is excluded
+                                vs_base = vs_url.split('|')[0] if '|' in vs_url else vs_url
+                                if vs_base in excluded_vs_uris:
+                                    # Find the exclusion reason
+                                    reason = 'ValueSet excluded from validation'
+                                    for exc in excluded_vs_config:
+                                        if exc.get('uri', '').split('|')[0] == vs_base:
+                                            reason = exc.get('reason', reason)
+                                            break
+                                    results_rows.append({
+                                        'file': split_node_path(ex),
+                                        'path': path,
+                                        'binding_path': mp,
+                                        'system': coding.get('system'),
+                                        'code': coding.get('code'),
+                                        'valueset': vs_url,
+                                        'strength': strength,
+                                        'vs_result': 'EXCLUDED',
+                                        'reason': reason
+                                    })
+                                    continue
+                                
+                                validation_key = (vs_url, coding.get('system'), coding.get('code'))
+                                if validation_key in seen_validations:
+                                    check = _valueset_validate_cache.get((endpoint, *validation_key))
+                                    if not check:
+                                        check = validate_code_in_valueset(endpoint, vs_url, coding)
+                                else:
+                                    seen_validations.add(validation_key)
+                                    check = validate_code_in_valueset(endpoint, vs_url, coding)
+                                result_status = check['result']
+                                result_reason = check['reason']
+                                
+                                # If validation checked but code not in ValueSet, detect if it's a system mismatch
+                                if result_status == 'CHECK' and 'Not a member of ValueSet' in result_reason:
+                                    # Heuristic: detect system mismatch by checking if coding system is obviously incompatible
+                                    coding_system = coding.get('system', '').lower()
+                                    vs_url_lower = vs_url.lower()
+                                    # If code is from AIR/PBS/MIMS and ValueSet is for SNOMED/LOINC/AMT, mark as NOT_APPLICABLE
+                                    if ('air-' in coding_system or '/air/' in coding_system or 'pbs' in coding_system or 'mims' in coding_system) and \
+                                       ('snomed' in vs_url_lower or 'loinc' in vs_url_lower or 'icd' in vs_url_lower or 'amt' in vs_url_lower):
+                                        result_status = 'NOT_APPLICABLE'
+                                        result_reason = f'Code system not applicable to this ValueSet'
+                                    # Reverse scenario: ValueSet is AIR and coding system is SNOMED/LOINC/AMT/ICD
+                                    elif ('air' in vs_url_lower or 'australian-immunisation-register' in vs_url_lower) and \
+                                         ('snomed' in coding_system or 'loinc' in coding_system or 'icd' in coding_system or 'amt' in coding_system):
+                                        result_status = 'NOT_APPLICABLE'
+                                        result_reason = f'Code system not applicable to this ValueSet'
+                                
                                 results_rows.append({
                                     'file': split_node_path(ex),
                                     'source': ex,
-                                    'path': path,
-                                    'binding_path': mp,
-                                    'system': coding_system,
-                                    'code': coding.get('code'),
-                                    'valueset': vs_url,
-                                    'strength': strength,
-                                    'vs_result': 'EXCLUDED',
-                                    'reason': reason
-                                })
-                                continue
-                            
-                            # Check if ValueSet is excluded
-                            vs_base = vs_url.split('|')[0] if '|' in vs_url else vs_url
-                            if vs_base in excluded_vs_uris:
-                                # Find the exclusion reason
-                                reason = 'ValueSet excluded from validation'
-                                for exc in excluded_vs_config:
-                                    if exc.get('uri', '').split('|')[0] == vs_base:
-                                        reason = exc.get('reason', reason)
-                                        break
-                                results_rows.append({
-                                    'file': split_node_path(ex),
                                     'path': path,
                                     'binding_path': mp,
                                     'system': coding.get('system'),
                                     'code': coding.get('code'),
                                     'valueset': vs_url,
                                     'strength': strength,
-                                    'vs_result': 'EXCLUDED',
-                                    'reason': reason
+                                    'vs_result': result_status,
+                                    'reason': result_reason
                                 })
-                                continue
-                            
-                            check = validate_code_in_valueset(endpoint, vs_url, coding)
-                            result_status = check['result']
-                            result_reason = check['reason']
-                            
-                            # If validation checked but code not in ValueSet, detect if it's a system mismatch
-                            if result_status == 'CHECK' and 'Not a member of ValueSet' in result_reason:
-                                # Heuristic: detect system mismatch by checking if coding system is obviously incompatible
-                                coding_system = coding.get('system', '').lower()
-                                vs_url_lower = vs_url.lower()
-                                # If code is from AIR/PBS/MIMS and ValueSet is for SNOMED/LOINC/AMT, mark as NOT_APPLICABLE
-                                if ('air-' in coding_system or '/air/' in coding_system or 'pbs' in coding_system or 'mims' in coding_system) and \
-                                   ('snomed' in vs_url_lower or 'loinc' in vs_url_lower or 'icd' in vs_url_lower or 'amt' in vs_url_lower):
-                                    result_status = 'NOT_APPLICABLE'
-                                    result_reason = f'Code system not applicable to this ValueSet'
-                                # Reverse scenario: ValueSet is AIR and coding system is SNOMED/LOINC/AMT/ICD
-                                elif ('air' in vs_url_lower or 'australian-immunisation-register' in vs_url_lower) and \
-                                     ('snomed' in coding_system or 'loinc' in coding_system or 'icd' in coding_system or 'amt' in coding_system):
-                                    result_status = 'NOT_APPLICABLE'
-                                    result_reason = f'Code system not applicable to this ValueSet'
-                            
-                            results_rows.append({
-                                'file': split_node_path(ex),
-                                'source': ex,
-                                'path': path,
-                                'binding_path': mp,
-                                'system': coding.get('system'),
-                                'code': coding.get('code'),
-                                'valueset': vs_url,
-                                'strength': strength,
-                                'vs_result': result_status,
-                                'reason': result_reason
-                            })
-            except Exception as e:
-                logger.debug(f"Error processing example {ex}: {e}")
+                except Exception as e:
+                    logger.debug(f"Error processing example {ex}: {e}")
 
         # Output HTML for this IG
         import pandas as pd
@@ -576,10 +625,13 @@ def run_example_valueset_membership_check(endpoint, config_file, npm_path_list, 
     return 0
 
 
-def glob_json(root):
+def glob_json(root, recursive=False):
     import glob
     from os.path import isfile
-    pattern = f"{root}/*.json"
-    for item in glob.glob(pattern):
+    if recursive:
+        pattern = f"{root}/**/*.json"
+    else:
+        pattern = f"{root}/*.json"
+    for item in glob.glob(pattern, recursive=recursive):
         if isfile(item):
             yield item
